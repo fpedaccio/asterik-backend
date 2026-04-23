@@ -11,7 +11,7 @@ export default function LoginPage() {
   const { session, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
-  const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [code, setCode] = useState(["", "", "", "", "", "", "", ""]);
   const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -45,7 +45,7 @@ export default function LoginPage() {
 
   async function verifyCode() {
     const token = code.join("");
-    if (token.length < 6) return;
+    if (token.length < 8) return;
     setStatus("verifying");
     setError(null);
     const { error } = await getSupabase().auth.verifyOtp({
@@ -68,7 +68,7 @@ export default function LoginPage() {
     const next = [...code];
     next[index] = digit;
     setCode(next);
-    if (digit && index < 5) {
+    if (digit && index < 7) {
       inputRefs.current[index + 1]?.focus();
     }
     if (next.every((d) => d !== "")) {
@@ -121,7 +121,7 @@ export default function LoginPage() {
       {step === "email" ? (
         <>
           <p style={{ marginTop: 20, fontSize: 15, color: "rgb(152 147 136)" }}>
-            We&apos;ll send you a 6-digit code — no password needed.
+            We&apos;ll send you an 8-digit code — no password needed.
           </p>
 
           <form onSubmit={sendCode} style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -223,7 +223,7 @@ export default function LoginPage() {
           )}
 
           <button
-            onClick={() => { setStep("email"); setCode(["","","","","",""]); setStatus("idle"); setError(null); }}
+            onClick={() => { setStep("email"); setCode(["","","","","","","",""]); setStatus("idle"); setError(null); }}
             style={{
               marginTop: 32, width: "100%", borderRadius: 999,
               border: "1px solid rgb(255 255 255 / 0.1)",
