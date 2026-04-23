@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+/*
+ * FilterApps — ZEN mobile-first theme.
+ * Warm near-black paper, cream ink, subtle magic accents.
+ */
+:root {
+  /* Warm cream ink on warm near-black paper */
+  --ink: 248 244 233;
+  --ink-dim: 210 205 193;
+  --ink-muted: 152 147 136;
+  --ink-faint: 96 92 83;
+
+  --paper: 14 13 12;
+  --paper-raised: 22 21 19;
+  --paper-veil: 32 30 27;
+
+  /* The "AI magic" accent — warm amber cream */
+  --magic: 234 198 126;
+
+  /* Aurora gradient colors for the shimmer effect */
+  --aurora-1: 234 198 126;
+  --aurora-2: 191 155 220;
+  --aurora-3: 126 188 210;
+}
+
+@theme inline {
+  --color-paper: rgb(var(--paper));
+  --color-paper-raised: rgb(var(--paper-raised));
+  --color-paper-veil: rgb(var(--paper-veil));
+  --color-ink: rgb(var(--ink));
+  --color-ink-dim: rgb(var(--ink-dim));
+  --color-ink-muted: rgb(var(--ink-muted));
+  --color-ink-faint: rgb(var(--ink-faint));
+  --color-magic: rgb(var(--magic));
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, serif;
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  /* Instrument Serif everywhere */
+  font-family: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100dvh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgb(var(--paper-raised)) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 50% 100%, rgba(234,198,126,0.04) 0%, transparent 70%);
+}
+
+/* Mobile frame — the app is phones-first. On desktop we center a phone viewport. */
+.app-frame {
+  width: 100%;
+  max-width: 440px;
+  margin-inline: auto;
+  min-height: 100dvh;
+  position: relative;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+}
+
+.safe-top { padding-top: calc(env(safe-area-inset-top, 0px) + 16px); }
+
+.font-display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* === AI "magic" shimmer — used during generation ============================ */
+@keyframes aurora-drift {
+  0%   { transform: translate(-20%, -10%) rotate(0deg);   }
+  50%  { transform: translate( 10%,  20%) rotate(180deg); }
+  100% { transform: translate(-20%, -10%) rotate(360deg); }
+}
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%);  }
+}
+.aurora {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.aurora::before {
+  content: "";
+  position: absolute; inset: -40%;
+  background:
+    radial-gradient(closest-side, rgb(var(--aurora-1) / 0.55), transparent 70%),
+    radial-gradient(closest-side, rgb(var(--aurora-2) / 0.45), transparent 70%) 30% 40%/60% 60% no-repeat,
+    radial-gradient(closest-side, rgb(var(--aurora-3) / 0.45), transparent 70%) 70% 60%/60% 60% no-repeat;
+  filter: blur(40px);
+  animation: aurora-drift 14s ease-in-out infinite;
+  z-index: -1;
+}
+.shimmer-bar {
+  position: absolute; inset: 0;
+  background: linear-gradient(100deg,
+    transparent 30%,
+    rgb(var(--magic) / 0.35) 50%,
+    transparent 70%);
+  animation: shimmer-sweep 2.2s ease-in-out infinite;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.35; transform: scale(1);   }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.breathe { animation: breathe 2.6s ease-in-out infinite; }
+
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.slide-up { animation: slide-up 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes gradient-breathe {
+  0%, 100% { transform: scale(1)    rotate(0deg);   filter: hue-rotate(0deg); }
+  50%      { transform: scale(1.08) rotate(8deg);   filter: hue-rotate(20deg); }
+}
+.filter-canvas-anim {
+  animation: gradient-breathe 9s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+/* === Page background magic blobs =========================================== */
+@keyframes blob-a {
+  0%, 100% { transform: translate(0%,   0%)   scale(1);    }
+  30%      { transform: translate(18%,  -22%) scale(1.1);  }
+  60%      { transform: translate(-12%, 15%)  scale(0.95); }
+}
+@keyframes blob-b {
+  0%, 100% { transform: translate(0%,   0%)   scale(1);    }
+  25%      { transform: translate(-20%, 12%)  scale(1.05); }
+  55%      { transform: translate(14%,  -18%) scale(0.9);  }
+}
+@keyframes blob-c {
+  0%, 100% { transform: translate(0%,   0%)   scale(1);    }
+  40%      { transform: translate(10%,  20%)  scale(1.08); }
+  70%      { transform: translate(-16%, -10%) scale(0.92); }
+}
+
+/* Fixed animated gradient layer — sits behind everything */
+.magic-bg {
+  position: fixed; inset: 0; z-index: -1;
+  overflow: hidden; pointer-events: none;
+  background: rgb(var(--paper));
+}
+/* Blob A — warm amber, top-left */
+.magic-bg::before {
+  content: "";
+  position: absolute;
+  width: 70vmax; height: 70vmax;
+  top: -20%; left: -15%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(234 198 126 / 0.18), transparent 70%);
+  filter: blur(30px);
+  animation: blob-a 28s ease-in-out infinite;
+  transform-origin: 60% 55%;
+}
+/* Blob B — violet, right side */
+.magic-bg::after {
+  content: "";
+  position: absolute;
+  width: 65vmax; height: 65vmax;
+  top: 10%; right: -20%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(162 98 220 / 0.15), transparent 70%);
+  filter: blur(35px);
+  animation: blob-b 34s ease-in-out infinite;
+  transform-origin: 45% 50%;
+}
+/* Blob C — teal, bottom — needs a child element since ::before/::after used */
+.magic-bg-c {
+  position: absolute;
+  width: 60vmax; height: 60vmax;
+  bottom: -15%; left: 20%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(34 211 238 / 0.11), transparent 70%);
+  filter: blur(35px);
+  animation: blob-c 22s ease-in-out infinite;
+  transform-origin: 50% 45%;
+  pointer-events: none;
+}
+
+/* Grain overlay — tiles a tiny SVG noise on top of everything */
+.grain-overlay {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 160px 160px;
+}
+
+input, textarea, button, select { font: inherit; color: inherit; }
+textarea { resize: none; }
+
+:where(button, input, textarea, a):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--paper)), 0 0 0 4px rgb(var(--magic) / 0.6);
+  border-radius: 12px;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--ink) / 0.12); border-radius: 999px; }
