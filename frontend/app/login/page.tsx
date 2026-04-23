@@ -24,17 +24,22 @@ export default function LoginPage() {
     e.preventDefault();
     setStatus("sending");
     setError(null);
-    const { error } = await getSupabase().auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
-    if (error) {
+    try {
+      const { error } = await getSupabase().auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      if (error) {
+        setStatus("error");
+        setError(error.message);
+      } else {
+        setStatus("idle");
+        setStep("code");
+        setTimeout(() => inputRefs.current[0]?.focus(), 100);
+      }
+    } catch (err) {
       setStatus("error");
-      setError(error.message);
-    } else {
-      setStatus("idle");
-      setStep("code");
-      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+      setError(err instanceof Error ? err.message : "Could not connect to auth service");
     }
   }
 
