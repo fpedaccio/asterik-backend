@@ -72,6 +72,7 @@ async def create_checkout_session(
         "success_url": f"{furl}/upgrade?success=1",
         "cancel_url": f"{furl}/profile",
         "client_reference_id": user.id,
+        "allow_promotion_codes": True,
     }
     if customer_id:
         params["customer"] = customer_id
