@@ -28,14 +28,14 @@ export default function LoginPage() {
       email,
       options: { shouldCreateUser: true },
     });
-    // Always advance to code step — Supabase may return a soft error
-    // (e.g. rate limit) but still deliver the email. Let the user try.
     if (error) {
+      setStatus("error");
       setError(error.message);
+    } else {
+      setStatus("idle");
+      setStep("code");
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
     }
-    setStatus("idle");
-    setStep("code");
-    setTimeout(() => inputRefs.current[0]?.focus(), 100);
   }
 
   async function verifyCode() {
@@ -147,7 +147,16 @@ export default function LoginPage() {
               {status === "sending" ? "Sending…" : "Send code"}
             </button>
             {status === "error" && (
-              <p style={{ textAlign: "center", fontSize: 14, color: "#ff7b7b" }}>{error}</p>
+              <div style={{ textAlign: "center" }}>
+                <p style={{ fontSize: 14, color: "#ff7b7b", margin: "0 0 8px" }}>{error}</p>
+                <button
+                  type="button"
+                  onClick={() => { setStep("code"); setStatus("idle"); setError(null); setTimeout(() => inputRefs.current[0]?.focus(), 100); }}
+                  style={{ fontSize: 13, color: "rgb(234 198 126)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                >
+                  I already received a code →
+                </button>
+              </div>
             )}
           </form>
 
