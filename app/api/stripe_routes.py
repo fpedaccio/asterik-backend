@@ -10,7 +10,7 @@ from app.core.supabase import service_client
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
 
-FRONTEND_URL = "https://asterik.app"  # fallback; override with FRONTEND_URL env var if needed
+FRONTEND_URL = "https://asterik-production.up.railway.app"
 
 
 def _stripe(settings: Settings) -> None:
