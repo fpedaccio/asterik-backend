@@ -139,10 +139,11 @@ async def stripe_webhook(
 
     sb = service_client()
 
+    obj = event["data"]["object"]
+
     if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        user_id: str | None = session.get("client_reference_id")
-        customer_id: str | None = session.get("customer")
+        user_id: str | None = getattr(obj, "client_reference_id", None)
+        customer_id: str | None = getattr(obj, "customer", None)
         if user_id and customer_id:
             sb.table("profiles").update({
                 "plan": "pro",
@@ -150,17 +151,15 @@ async def stripe_webhook(
             }).eq("id", user_id).execute()
 
     elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
-        subscription = event["data"]["object"]
-        customer_id = subscription.get("customer")
+        customer_id = getattr(obj, "customer", None)
         if customer_id:
             sb.table("profiles").update({"plan": "free"}).eq(
                 "stripe_customer_id", customer_id
             ).execute()
 
     elif event["type"] == "customer.subscription.updated":
-        subscription = event["data"]["object"]
-        customer_id = subscription.get("customer")
-        new_status = subscription.get("status")
+        customer_id = getattr(obj, "customer", None)
+        new_status = getattr(obj, "status", None)
         if customer_id and new_status:
             plan = "pro" if new_status == "active" else "free"
             sb.table("profiles").update({"plan": plan}).eq(
