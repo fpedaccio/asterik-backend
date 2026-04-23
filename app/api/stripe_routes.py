@@ -10,9 +10,31 @@ from app.core.supabase import service_client
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
 
+FRONTEND_URL = "https://asterik.app"  # fallback; override with FRONTEND_URL env var if needed
+
 
 def _stripe(settings: Settings) -> None:
     stripe.api_key = settings.stripe_secret_key
+
+
+def _get_profile(user_id: str) -> dict:
+    """Fetch profile row safely; returns empty dict if not found."""
+    try:
+        result = (
+            service_client()
+            .table("profiles")
+            .select("stripe_customer_id, plan")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else {}
+    except Exception:
+        return {}
+
+
+def _frontend_url(settings: Settings) -> str:
+    return getattr(settings, "frontend_url", None) or FRONTEND_URL
 
 
 # ---------------------------------------------------------------------------
@@ -31,46 +53,36 @@ class PortalResponse(BaseModel):
 # ---------------------------------------------------------------------------
 @router.post("/checkout", response_model=CheckoutResponse)
 async def create_checkout_session(
-    request: Request,
     user: CurrentUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> CheckoutResponse:
     _stripe(settings)
 
-    # Reuse existing Stripe customer if we already created one for this user.
-    sb = service_client()
-    profile = (
-        sb.table("profiles")
-        .select("stripe_customer_id, plan")
-        .eq("id", user.id)
-        .maybe_single()
-        .execute()
-        .data
-    )
+    profile = _get_profile(user.id)
 
-    if profile and profile.get("plan") == "pro":
+    if profile.get("plan") == "pro":
         raise HTTPException(status_code=400, detail="Already on Pro plan")
 
-    customer_id: str | None = profile.get("stripe_customer_id") if profile else None
-
-    # Determine app origin for redirect URLs
-    origin = str(request.base_url).rstrip("/")
-    # In production the frontend is a separate domain — read from settings if available
-    frontend_url = getattr(settings, "frontend_url", None) or origin
+    customer_id: str | None = profile.get("stripe_customer_id")
+    furl = _frontend_url(settings)
 
     params: dict = {
         "mode": "subscription",
         "line_items": [{"price": settings.stripe_price_id, "quantity": 1}],
-        "success_url": f"{frontend_url}/upgrade?success=1",
-        "cancel_url": f"{frontend_url}/profile",
+        "success_url": f"{furl}/upgrade?success=1",
+        "cancel_url": f"{furl}/profile",
         "client_reference_id": user.id,
-        "customer_email": user.email if not customer_id else None,
     }
     if customer_id:
         params["customer"] = customer_id
-        params.pop("customer_email", None)
+    elif user.email:
+        params["customer_email"] = user.email
 
-    session = stripe.checkout.Session.create(**params)
+    try:
+        session = stripe.checkout.Session.create(**params)
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=f"Stripe error: {exc.user_message or exc}")
+
     return CheckoutResponse(url=session.url)
 
 
@@ -79,36 +91,31 @@ async def create_checkout_session(
 # ---------------------------------------------------------------------------
 @router.post("/portal", response_model=PortalResponse)
 async def create_portal_session(
-    request: Request,
     user: CurrentUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> PortalResponse:
     _stripe(settings)
 
-    sb = service_client()
-    profile = (
-        sb.table("profiles")
-        .select("stripe_customer_id")
-        .eq("id", user.id)
-        .maybe_single()
-        .execute()
-        .data
-    )
+    profile = _get_profile(user.id)
+    customer_id: str | None = profile.get("stripe_customer_id")
 
-    customer_id: str | None = profile.get("stripe_customer_id") if profile else None
     if not customer_id:
         raise HTTPException(status_code=400, detail="No active subscription found")
 
-    frontend_url = getattr(settings, "frontend_url", None) or str(request.base_url).rstrip("/")
-    session = stripe.billing_portal.Session.create(
-        customer=customer_id,
-        return_url=f"{frontend_url}/profile",
-    )
+    furl = _frontend_url(settings)
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=f"{furl}/profile",
+        )
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=f"Stripe error: {exc.user_message or exc}")
+
     return PortalResponse(url=session.url)
 
 
 # ---------------------------------------------------------------------------
-# POST /api/stripe/webhook  (called by Stripe, no auth header)
+# POST /api/stripe/webhook  (called by Stripe, no JWT auth)
 # ---------------------------------------------------------------------------
 @router.post("/webhook", status_code=200)
 async def stripe_webhook(
@@ -135,7 +142,6 @@ async def stripe_webhook(
         session = event["data"]["object"]
         user_id: str | None = session.get("client_reference_id")
         customer_id: str | None = session.get("customer")
-
         if user_id and customer_id:
             sb.table("profiles").update({
                 "plan": "pro",
@@ -153,7 +159,7 @@ async def stripe_webhook(
     elif event["type"] == "customer.subscription.updated":
         subscription = event["data"]["object"]
         customer_id = subscription.get("customer")
-        new_status = subscription.get("status")  # active, past_due, canceled, etc.
+        new_status = subscription.get("status")
         if customer_id and new_status:
             plan = "pro" if new_status == "active" else "free"
             sb.table("profiles").update({"plan": plan}).eq(

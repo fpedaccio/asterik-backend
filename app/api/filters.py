@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
+from app.core.quota import enforce_filter_save
 from app.core.supabase import (
     download_bytes,
     service_client,
@@ -26,6 +27,8 @@ def create_filter(
     user: CurrentUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> FilterResponse:
+    enforce_filter_save(user.id)
+
     sb = service_client()
 
     preview_path: str | None = None
