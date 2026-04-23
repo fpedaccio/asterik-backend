@@ -18,11 +18,13 @@ class Settings(BaseSettings):
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_text_model: str = "gemini-2.5-flash"
 
-    cors_allow_origins: str = "http://localhost:3000"
+    cors_allow_origins: str = "*"
     signed_url_ttl_seconds: int = Field(default=3600, ge=60)
 
     @property
     def cors_origins_list(self) -> list[str]:
+        if self.cors_allow_origins.strip() == "*":
+            return ["*"]
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
