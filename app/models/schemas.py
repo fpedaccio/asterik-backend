@@ -53,6 +53,8 @@ class GenerationCreate(BaseModel):
     prompt: str | None = None
     engine: Engine
     filter_id: str | None = None  # if applying an existing filter
+    reference_source_path: str | None = None  # if copying style from a reference image
+    watermark: bool | None = None  # None = plan default (free=on, pro=off)
 
 
 class GenerationResponse(BaseModel):

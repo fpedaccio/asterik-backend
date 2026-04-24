@@ -7,15 +7,24 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
-from app.core.quota import enforce_generation_quota
+from app.core.quota import enforce_generation_quota, get_user_plan
 from app.core.supabase import (
     download_bytes,
     service_client,
     signed_download_url,
     upload_bytes,
 )
-from app.engines.gemini import apply_gemini_filter
-from app.engines.hybrid import apply_cached_params, apply_hybrid_filter
+from app.engines.gemini import (
+    apply_gemini_filter,
+    apply_gemini_filter_from_reference,
+    describe_reference_style,
+)
+from app.engines.hybrid import (
+    apply_cached_params,
+    apply_hybrid_filter,
+    apply_hybrid_filter_from_reference,
+)
+from app.engines.watermark import apply_watermark
 from app.models.schemas import (
     GenerationCreate,
     GenerationResponse,
@@ -37,20 +46,39 @@ async def create_generation(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="source_path does not belong to user",
         )
-
-    prompt, cached_params = _resolve_prompt_and_params(body, user.id)
-    if not prompt:
+    if body.reference_source_path and not body.reference_source_path.startswith(f"{user.id}/"):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="prompt is required when filter_id is not provided",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="reference_source_path does not belong to user",
         )
 
-    # Quota check: must happen after prompt is resolved so we know if it's custom
-    has_custom_prompt = body.filter_id is None
-    enforce_generation_quota(user.id, body.engine, has_custom_prompt)
+    using_reference = body.reference_source_path is not None and body.filter_id is None
+    prompt, cached_params = _resolve_prompt_and_params(body, user.id)
+    if not prompt and not using_reference:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="prompt, reference_source_path, or filter_id is required",
+        )
+
+    # Quota check: either a text prompt or a reference image counts as a
+    # "custom" generation (blocked on free plan — catalog filters only).
+    has_custom_input = body.filter_id is None
+    enforce_generation_quota(user.id, body.engine, has_custom_input)
+
+    # Watermark policy: free plan always gets watermarked; pro defaults to off
+    # but honors the per-request flag if provided.
+    plan = get_user_plan(user.id)
+    if plan == "free":
+        watermark_on = True
+    else:
+        watermark_on = bool(body.watermark) if body.watermark is not None else False
 
     generation_id = str(uuid.uuid4())
     sb = service_client()
+
+    # The prompt stored in the DB for reference-image generations is filled
+    # in after we call Gemini (so the filter, if saved, has a real description).
+    stored_prompt = prompt or "[reference image]"
 
     sb.table("generations").insert({
         "id": generation_id,
@@ -58,7 +86,7 @@ async def create_generation(
         "filter_id": body.filter_id,
         "source_path": body.source_path,
         "engine": body.engine,
-        "prompt_used": prompt,
+        "prompt_used": stored_prompt,
         "status": "pending",
     }).execute()
 
@@ -68,15 +96,43 @@ async def create_generation(
             download_bytes, settings.supabase_bucket_uploads, body.source_path
         )
 
+        reference_bytes: bytes | None = None
+        if using_reference:
+            reference_bytes = await run_in_threadpool(
+                download_bytes, settings.supabase_bucket_uploads, body.reference_source_path
+            )
+
         if body.engine == "gemini":
-            output_bytes = await run_in_threadpool(apply_gemini_filter, source_bytes, prompt)
+            if using_reference:
+                output_bytes = await run_in_threadpool(
+                    apply_gemini_filter_from_reference, source_bytes, reference_bytes
+                )
+                # Describe the reference so the saved filter has a real prompt.
+                try:
+                    derived = await run_in_threadpool(describe_reference_style, reference_bytes)
+                    stored_prompt = derived or stored_prompt
+                except Exception:
+                    pass
+            else:
+                output_bytes = await run_in_threadpool(apply_gemini_filter, source_bytes, prompt)
         elif body.engine == "hybrid":
-            if cached_params is not None:
+            if using_reference:
+                output_bytes, lut = await run_in_threadpool(
+                    apply_hybrid_filter_from_reference, source_bytes, reference_bytes
+                )
+                try:
+                    derived = await run_in_threadpool(describe_reference_style, reference_bytes)
+                    stored_prompt = derived or stored_prompt
+                except Exception:
+                    pass
+                if body.filter_id is not None:
+                    sb.table("filters").update({"params": lut.model_dump()}).eq(
+                        "id", body.filter_id
+                    ).eq("owner_id", user.id).execute()
+            elif cached_params is not None:
                 output_bytes = await run_in_threadpool(apply_cached_params, source_bytes, cached_params)
             else:
                 output_bytes, lut = await run_in_threadpool(apply_hybrid_filter, source_bytes, prompt)
-                # If the generation originated from a saved filter that doesn't yet have params
-                # cached, persist them now so re-applies are free.
                 if body.filter_id is not None:
                     sb.table("filters").update({"params": lut.model_dump()}).eq(
                         "id", body.filter_id
@@ -86,6 +142,9 @@ async def create_generation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown engine: {body.engine}",
             )
+
+        if watermark_on:
+            output_bytes = await run_in_threadpool(apply_watermark, output_bytes)
 
         output_path = f"{user.id}/{generation_id}.jpg"
         await run_in_threadpool(
@@ -101,6 +160,7 @@ async def create_generation(
             "status": "done",
             "output_path": output_path,
             "elapsed_ms": elapsed_ms,
+            "prompt_used": stored_prompt,
         }).eq("id", generation_id).execute()
 
         output_url = signed_download_url(
@@ -113,7 +173,7 @@ async def create_generation(
             id=generation_id,
             status="done",
             engine=body.engine,
-            prompt_used=prompt,
+            prompt_used=stored_prompt,
             source_path=body.source_path,
             output_path=output_path,
             output_url=output_url,
