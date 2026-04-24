@@ -16,13 +16,13 @@ from app.core.supabase import (
 )
 from app.engines.gemini import (
     apply_gemini_filter,
-    apply_gemini_filter_from_reference,
-    describe_reference_style,
+    apply_gemini_filter_from_references,
+    describe_reference_styles,
 )
 from app.engines.hybrid import (
     apply_cached_params,
     apply_hybrid_filter,
-    apply_hybrid_filter_from_reference,
+    apply_hybrid_filter_from_references,
 )
 from app.engines.watermark import apply_watermark
 from app.models.schemas import (
@@ -46,13 +46,30 @@ async def create_generation(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="source_path does not belong to user",
         )
-    if body.reference_source_path and not body.reference_source_path.startswith(f"{user.id}/"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="reference_source_path does not belong to user",
-        )
 
-    using_reference = body.reference_source_path is not None and body.filter_id is None
+    # Normalize reference paths: accept either the legacy single field or a list,
+    # cap at 4, deduplicate while preserving order.
+    raw_refs: list[str] = []
+    if body.reference_source_paths:
+        raw_refs.extend(body.reference_source_paths)
+    if body.reference_source_path:
+        raw_refs.append(body.reference_source_path)
+    seen: set[str] = set()
+    reference_paths: list[str] = []
+    for p in raw_refs:
+        if p and p not in seen:
+            seen.add(p)
+            reference_paths.append(p)
+    reference_paths = reference_paths[:4]
+
+    for rp in reference_paths:
+        if not rp.startswith(f"{user.id}/"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="reference path does not belong to user",
+            )
+
+    using_reference = bool(reference_paths) and body.filter_id is None
     prompt, cached_params = _resolve_prompt_and_params(body, user.id)
     if not prompt and not using_reference:
         raise HTTPException(
@@ -96,20 +113,22 @@ async def create_generation(
             download_bytes, settings.supabase_bucket_uploads, body.source_path
         )
 
-        reference_bytes: bytes | None = None
+        reference_bytes_list: list[bytes] = []
         if using_reference:
-            reference_bytes = await run_in_threadpool(
-                download_bytes, settings.supabase_bucket_uploads, body.reference_source_path
-            )
+            for rp in reference_paths:
+                data = await run_in_threadpool(
+                    download_bytes, settings.supabase_bucket_uploads, rp
+                )
+                reference_bytes_list.append(data)
 
         if body.engine == "gemini":
             if using_reference:
                 output_bytes = await run_in_threadpool(
-                    apply_gemini_filter_from_reference, source_bytes, reference_bytes
+                    apply_gemini_filter_from_references, source_bytes, reference_bytes_list
                 )
-                # Describe the reference so the saved filter has a real prompt.
+                # Describe the reference(s) so the saved filter has a real prompt.
                 try:
-                    derived = await run_in_threadpool(describe_reference_style, reference_bytes)
+                    derived = await run_in_threadpool(describe_reference_styles, reference_bytes_list)
                     stored_prompt = derived or stored_prompt
                 except Exception:
                     pass
@@ -118,10 +137,10 @@ async def create_generation(
         elif body.engine == "hybrid":
             if using_reference:
                 output_bytes, lut = await run_in_threadpool(
-                    apply_hybrid_filter_from_reference, source_bytes, reference_bytes
+                    apply_hybrid_filter_from_references, source_bytes, reference_bytes_list
                 )
                 try:
-                    derived = await run_in_threadpool(describe_reference_style, reference_bytes)
+                    derived = await run_in_threadpool(describe_reference_styles, reference_bytes_list)
                     stored_prompt = derived or stored_prompt
                 except Exception:
                     pass

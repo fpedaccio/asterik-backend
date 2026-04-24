@@ -116,3 +116,52 @@ def apply_hybrid_filter_from_reference(
 ) -> tuple[bytes, LutParams]:
     params = generate_lut_params_from_reference(reference_bytes)
     return apply_lut(source_bytes, params), params
+
+
+def _average_lut_params(many: list[LutParams]) -> LutParams:
+    """Element-wise mean of scalar fields and the two ColorTint sub-objects."""
+    if not many:
+        raise ValueError("many must contain at least one LutParams")
+    if len(many) == 1:
+        return many[0]
+
+    n = len(many)
+    from app.models.schemas import ColorTint  # local import to avoid cycle
+
+    def avg(getter):
+        return sum(getter(p) for p in many) / n
+
+    avg_highlight = ColorTint(
+        r=avg(lambda p: p.highlight_tint.r),
+        g=avg(lambda p: p.highlight_tint.g),
+        b=avg(lambda p: p.highlight_tint.b),
+        mix=avg(lambda p: p.highlight_tint.mix),
+    )
+    avg_shadow = ColorTint(
+        r=avg(lambda p: p.shadow_tint.r),
+        g=avg(lambda p: p.shadow_tint.g),
+        b=avg(lambda p: p.shadow_tint.b),
+        mix=avg(lambda p: p.shadow_tint.mix),
+    )
+    return LutParams(
+        brightness=avg(lambda p: p.brightness),
+        contrast=avg(lambda p: p.contrast),
+        saturation=avg(lambda p: p.saturation),
+        temperature=avg(lambda p: p.temperature),
+        tint=avg(lambda p: p.tint),
+        highlight_tint=avg_highlight,
+        shadow_tint=avg_shadow,
+        grain=avg(lambda p: p.grain),
+        vignette=avg(lambda p: p.vignette),
+    )
+
+
+def apply_hybrid_filter_from_references(
+    source_bytes: bytes, references: list[bytes]
+) -> tuple[bytes, LutParams]:
+    """Hybrid engine with N references: extract LutParams from each and average."""
+    if not references:
+        raise ValueError("references must contain at least one image")
+    all_params = [generate_lut_params_from_reference(b) for b in references]
+    blended = _average_lut_params(all_params)
+    return apply_lut(source_bytes, blended), blended

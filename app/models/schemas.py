@@ -53,7 +53,10 @@ class GenerationCreate(BaseModel):
     prompt: str | None = None
     engine: Engine
     filter_id: str | None = None  # if applying an existing filter
-    reference_source_path: str | None = None  # if copying style from a reference image
+    # Style references. Either a single path (legacy) or a list. Both get
+    # normalized server-side to a list of up to 4.
+    reference_source_path: str | None = None
+    reference_source_paths: list[str] | None = None
     watermark: bool | None = None  # None = plan default (free=on, pro=off)
 
 
