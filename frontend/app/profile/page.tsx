@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  createCheckoutSession,
+  createPortalSession,
   deleteFilter,
   listFilters,
   updateFilter,
@@ -14,15 +16,38 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/app/providers";
 import { FilterCanvas } from "@/components/filter-canvas";
+import { getSupabase } from "@/lib/supabase";
+
+function usePlan(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["profile", userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      const { data } = await getSupabase()
+        .from("profiles")
+        .select("plan, stripe_customer_id")
+        .eq("id", userId)
+        .single();
+      return data;
+    },
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
 
 export default function ProfilePage() {
   const router = useRouter();
   const { session, loading, signOut } = useAuth();
   const qc = useQueryClient();
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !session) router.replace("/login");
   }, [loading, session, router]);
+
+  const { data: profile } = usePlan(session?.user.id);
+  const isPro = profile?.plan === "pro";
 
   const { data, isLoading } = useQuery({
     queryKey: ["filters", "mine"],
@@ -40,6 +65,30 @@ export default function ProfilePage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["filters"] }),
   });
 
+  async function handleGoPro() {
+    setStripeLoading(true);
+    setStripeError(null);
+    try {
+      const { url } = await createCheckoutSession();
+      window.location.href = url;
+    } catch (e) {
+      setStripeError(e instanceof Error ? e.message : "Something went wrong");
+      setStripeLoading(false);
+    }
+  }
+
+  async function handleManage() {
+    setStripeLoading(true);
+    setStripeError(null);
+    try {
+      const { url } = await createPortalSession();
+      window.location.href = url;
+    } catch (e) {
+      setStripeError(e instanceof Error ? e.message : "Something went wrong");
+      setStripeLoading(false);
+    }
+  }
+
   if (!session) return null;
 
   return (
@@ -49,6 +98,51 @@ export default function ProfilePage() {
         <h1 className="font-display text-3xl leading-none text-ink">Your filters</h1>
         <p className="mt-2 truncate text-sm text-ink-muted">{session.user.email}</p>
       </header>
+
+      {/* Plan card */}
+      <div className="mx-5 mt-6 rounded-2xl p-4" style={{
+        border: isPro ? "1px solid rgb(234 198 126 / 0.3)" : "1px solid rgb(255 255 255 / 0.08)",
+        background: isPro
+          ? "linear-gradient(135deg, rgb(234 198 126 / 0.08), rgb(191 155 220 / 0.05))"
+          : "rgb(255 255 255 / 0.03)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <p style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em", color: "rgb(152 147 136)", margin: 0 }}>
+              Plan
+            </p>
+            <p style={{ fontSize: 18, fontWeight: 600, color: isPro ? "rgb(234 198 126)" : "rgb(248 244 233)", margin: "4px 0 0" }}>
+              {isPro ? "Asterik Pro ✦" : "Free"}
+            </p>
+            {!isPro && (
+              <p style={{ fontSize: 12, color: "rgb(152 147 136)", margin: "2px 0 0" }}>
+                Upgrade for unlimited generations
+              </p>
+            )}
+          </div>
+          <button
+            onClick={isPro ? handleManage : handleGoPro}
+            disabled={stripeLoading}
+            style={{
+              borderRadius: 999,
+              border: "none",
+              padding: "10px 18px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: stripeLoading ? "default" : "pointer",
+              transition: "opacity 150ms",
+              opacity: stripeLoading ? 0.6 : 1,
+              background: isPro ? "rgb(255 255 255 / 0.08)" : "rgb(234 198 126)",
+              color: isPro ? "rgb(210 205 193)" : "rgb(14 13 12)",
+            }}
+          >
+            {stripeLoading ? "…" : isPro ? "Manage" : "Go Pro — $5/mo"}
+          </button>
+        </div>
+        {stripeError && (
+          <p style={{ fontSize: 12, color: "#ff7b7b", margin: "8px 0 0" }}>{stripeError}</p>
+        )}
+      </div>
 
       {isLoading && (
         <div className="mt-16 flex justify-center">

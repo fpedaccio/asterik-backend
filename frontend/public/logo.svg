@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Asterisk: 6 arms at 60° intervals, thin strokes, warm amber -->
+  <line x1="16" y1="4"  x2="16" y2="28" stroke="#EAC67E" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="4.7" y1="10" x2="27.3" y2="22" stroke="#EAC67E" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="4.7" y1="22" x2="27.3" y2="10" stroke="#EAC67E" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- Small dot at center -->
+  <circle cx="16" cy="16" r="1.8" fill="#EAC67E"/>
+</svg>

@@ -14,12 +14,12 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "FilterApps — describe a look, apply it.",
+  title: "Asterik — describe a look, apply it.",
   description:
     "Describe a filter style in words. AI color-grades your photo. Save the look, share it, publish it.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/favicon.ico", apple: "/icons/icon-192.png" },
-  applicationName: "FilterApps",
+  applicationName: "Asterik",
 };
 
 export const viewport: Viewport = {

@@ -1,11 +1,11 @@
 {
-  "name": "FilterApps",
-  "short_name": "FilterApps",
+  "name": "Asterik",
+  "short_name": "Asterik",
   "description": "Describe a filter style. Apply it to your photo with AI.",
   "start_url": "/editor",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#0e0d0c",
+  "theme_color": "#0e0d0c",
   "orientation": "portrait",
   "icons": [
     {

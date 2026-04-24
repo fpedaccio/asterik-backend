@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
+from app.core.quota import enforce_generation_quota
 from app.core.supabase import (
     download_bytes,
     service_client,
@@ -43,6 +44,10 @@ async def create_generation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="prompt is required when filter_id is not provided",
         )
+
+    # Quota check: must happen after prompt is resolved so we know if it's custom
+    has_custom_prompt = body.filter_id is None
+    enforce_generation_quota(user.id, body.engine, has_custom_prompt)
 
     generation_id = str(uuid.uuid4())
     sb = service_client()

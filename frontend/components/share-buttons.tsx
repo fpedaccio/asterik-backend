@@ -35,7 +35,7 @@ export function ShareButtons({ imageUrl, filename, shareUrl, shareTitle }: Props
         if ((navigator as Navigator).canShare?.({ files: [file] })) {
           await (navigator as Navigator).share?.({
             files: [file],
-            title: shareTitle ?? "FilterApps",
+            title: shareTitle ?? "Asterik",
           });
           return;
         }

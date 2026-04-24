@@ -1,20 +1,21 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "@/app/providers";
+
+const CODE_LENGTH = 8;
 
 export default function LoginPage() {
   const router = useRouter();
   const { session, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
-  const [code, setCode] = useState(["", "", "", "", "", "", "", ""]);
+  const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loading && session) router.replace("/editor");
@@ -35,7 +36,7 @@ export default function LoginPage() {
       } else {
         setStatus("idle");
         setStep("code");
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
+        setTimeout(() => codeRef.current?.focus(), 100);
       }
     } catch (err) {
       setStatus("error");
@@ -43,56 +44,26 @@ export default function LoginPage() {
     }
   }
 
-  async function verifyCode() {
-    const token = code.join("");
-    if (token.length < 8) return;
+  async function verify(token: string) {
     setStatus("verifying");
     setError(null);
     const { error } = await getSupabase().auth.verifyOtp({
-      email,
-      token,
-      type: "email",
+      email, token, type: "email",
     });
     if (error) {
       setStatus("error");
       setError("Invalid code. Try again or request a new one.");
-      setCode(["", "", "", "", "", ""]);
-      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+      setCode("");
+      setTimeout(() => codeRef.current?.focus(), 100);
     } else {
       router.replace("/editor");
     }
   }
 
-  function handleDigit(index: number, value: string) {
-    const digit = value.replace(/\D/g, "").slice(-1);
-    const next = [...code];
-    next[index] = digit;
-    setCode(next);
-    if (digit && index < 7) {
-      inputRefs.current[index + 1]?.focus();
-    }
-    if (next.every((d) => d !== "")) {
-      // auto-submit when all 6 digits filled
-      const token = next.join("");
-      setStatus("verifying");
-      setError(null);
-      getSupabase().auth.verifyOtp({ email, token, type: "email" }).then(({ error }) => {
-        if (error) {
-          setStatus("error");
-          setError("Invalid code. Try again or request a new one.");
-          setCode(["", "", "", "", "", ""]);
-          setTimeout(() => inputRefs.current[0]?.focus(), 100);
-        } else {
-          router.replace("/editor");
-        }
-      });
-    }
-  }
-
-  function handleKeyDown(index: number, e: React.KeyboardEvent) {
-    if (e.key === "Backspace" && !code[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
+  function handleCodeChange(val: string) {
+    const digits = val.replace(/\D/g, "").slice(0, CODE_LENGTH);
+    setCode(digits);
+    if (digits.length === CODE_LENGTH) verify(digits);
   }
 
   async function signInWithGoogle() {
@@ -104,9 +75,10 @@ export default function LoginPage() {
 
   return (
     <div className="safe-top flex min-h-[100dvh] flex-col px-6 pb-10">
-      <div className="mt-6 flex items-center gap-3">
-        <Sparkles size={28} style={{ color: "rgb(234 198 126)" }} />
-        <span style={{ fontSize: 14, color: "rgb(210 205 193)" }}>FilterApps</span>
+      <div className="mt-6 flex items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Asterik" width={22} height={22} />
+        <span style={{ fontSize: 14, letterSpacing: "0.06em", color: "rgb(210 205 193)" }}>Asterik</span>
       </div>
 
       <div className="mt-20">
@@ -121,7 +93,7 @@ export default function LoginPage() {
       {step === "email" ? (
         <>
           <p style={{ marginTop: 20, fontSize: 15, color: "rgb(152 147 136)" }}>
-            We&apos;ll send you an 8-digit code — no password needed.
+            We&apos;ll send you a code — no password needed.
           </p>
 
           <form onSubmit={sendCode} style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -156,7 +128,7 @@ export default function LoginPage() {
                 <p style={{ fontSize: 14, color: "#ff7b7b", margin: "0 0 8px" }}>{error}</p>
                 <button
                   type="button"
-                  onClick={() => { setStep("code"); setStatus("idle"); setError(null); setTimeout(() => inputRefs.current[0]?.focus(), 100); }}
+                  onClick={() => { setStep("code"); setStatus("idle"); setError(null); setTimeout(() => codeRef.current?.focus(), 100); }}
                   style={{ fontSize: 13, color: "rgb(234 198 126)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
                 >
                   I already received a code →
@@ -186,44 +158,43 @@ export default function LoginPage() {
       ) : (
         <>
           <p style={{ marginTop: 20, fontSize: 15, color: "rgb(152 147 136)" }}>
-            Check your inbox and enter the 6-digit code.
+            Check your inbox and enter the code.
           </p>
 
-          {/* Code input */}
-          <div style={{ marginTop: 40, display: "flex", gap: 10, justifyContent: "center" }}>
-            {code.map((digit, i) => (
-              <input
-                key={i}
-                ref={(el) => { inputRefs.current[i] = el; }}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleDigit(i, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(i, e)}
-                style={{
-                  width: 44, height: 56, textAlign: "center",
-                  fontSize: 22, fontWeight: 600, borderRadius: 14,
-                  border: `1px solid ${digit ? "rgb(248 244 233 / 0.4)" : "rgb(255 255 255 / 0.12)"}`,
-                  background: digit ? "rgb(255 255 255 / 0.06)" : "transparent",
-                  color: "rgb(248 244 233)", outline: "none",
-                  transition: "border-color 150ms, background 150ms",
-                }}
-              />
-            ))}
+          <div style={{ marginTop: 40, position: "relative" }}>
+            <input
+              ref={codeRef}
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_LENGTH}
+              value={code}
+              onChange={(e) => handleCodeChange(e.target.value)}
+              placeholder="········"
+              style={{
+                width: "100%", borderRadius: 16, boxSizing: "border-box",
+                border: "1px solid rgb(255 255 255 / 0.15)",
+                background: "rgb(255 255 255 / 0.03)",
+                padding: "18px 24px",
+                fontSize: 28, fontWeight: 600, letterSpacing: "0.35em",
+                textAlign: "center", outline: "none",
+                color: "rgb(248 244 233)",
+                transition: "border-color 150ms",
+              }}
+            />
+            {status === "verifying" && (
+              <p style={{ textAlign: "center", marginTop: 14, fontSize: 14, color: "rgb(234 198 126)" }}>
+                Verifying…
+              </p>
+            )}
           </div>
 
-          {status === "verifying" && (
-            <p style={{ textAlign: "center", marginTop: 20, fontSize: 14, color: "rgb(234 198 126)" }}>
-              Verifying…
-            </p>
-          )}
           {status === "error" && (
-            <p style={{ textAlign: "center", marginTop: 20, fontSize: 14, color: "#ff7b7b" }}>{error}</p>
+            <p style={{ textAlign: "center", marginTop: 14, fontSize: 14, color: "#ff7b7b" }}>{error}</p>
           )}
 
           <button
-            onClick={() => { setStep("email"); setCode(["","","","","","","",""]); setStatus("idle"); setError(null); }}
+            onClick={() => { setStep("email"); setCode(""); setStatus("idle"); setError(null); }}
             style={{
               marginTop: 32, width: "100%", borderRadius: 999,
               border: "1px solid rgb(255 255 255 / 0.1)",

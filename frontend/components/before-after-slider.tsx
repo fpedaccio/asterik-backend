@@ -22,7 +22,7 @@ export function BeforeAfterSlider({ beforeUrl, afterUrl }: Props) {
   return (
     <div
       ref={containerRef}
-      className="relative aspect-[3/4] w-full select-none overflow-hidden rounded-[28px]"
+      className="relative h-full w-full select-none overflow-hidden rounded-[20px]"
       style={{ background: "#0e0d0c" }}
       onMouseMove={(e) => {
         if (e.buttons === 1) updateFromEvent(e.clientX);

@@ -35,7 +35,13 @@ export interface FilterResponse {
   preview_url: string | null;
   visibility: Visibility;
   created_at: string;
+  likes_count: number;
+  uses_count: number;
+  liked_by_me: boolean;
+  favorited_by_me: boolean;
 }
+
+export type FilterScope = "top" | "new" | "favorites" | "mine" | "public";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -99,7 +105,7 @@ export async function createGeneration(input: {
 }
 
 // -------- Filters --------
-export async function listFilters(scope: "public" | "mine"): Promise<FilterResponse[]> {
+export async function listFilters(scope: FilterScope): Promise<FilterResponse[]> {
   return request<FilterResponse[]>(`/api/filters?scope=${scope}`);
 }
 
@@ -134,4 +140,46 @@ export async function updateFilter(
 
 export async function deleteFilter(id: string): Promise<void> {
   await request<void>(`/api/filters/${id}`, { method: "DELETE" });
+}
+
+// -------- Likes & Favorites --------
+export async function likeFilter(id: string): Promise<void> {
+  await request<void>(`/api/filters/${id}/like`, { method: "POST" });
+}
+
+export async function unlikeFilter(id: string): Promise<void> {
+  await request<void>(`/api/filters/${id}/like`, { method: "DELETE" });
+}
+
+export async function favoriteFilter(id: string): Promise<void> {
+  await request<void>(`/api/filters/${id}/favorite`, { method: "POST" });
+}
+
+export async function unfavoriteFilter(id: string): Promise<void> {
+  await request<void>(`/api/filters/${id}/favorite`, { method: "DELETE" });
+}
+
+// -------- Quota --------
+export interface QuotaResponse {
+  plan: "free" | "pro";
+  gemini_used: number;
+  gemini_limit: number;
+  hybrid_used: number;
+  hybrid_limit: number;
+  total_used: number;
+  total_limit: number;
+  can_use_custom_prompt: boolean;
+}
+
+export async function getQuota(): Promise<QuotaResponse> {
+  return request<QuotaResponse>("/api/quota");
+}
+
+// -------- Stripe --------
+export async function createCheckoutSession(): Promise<{ url: string }> {
+  return request<{ url: string }>("/api/stripe/checkout", { method: "POST" });
+}
+
+export async function createPortalSession(): Promise<{ url: string }> {
+  return request<{ url: string }>("/api/stripe/portal", { method: "POST" });
 }

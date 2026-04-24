@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     gemini_image_model: str = "gemini-2.5-flash-image"
     gemini_text_model: str = "gemini-2.5-flash"
 
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+    stripe_price_id: str = "price_1TPTKX05gP9XTfGQy7iVsvW6"
+
     cors_allow_origins: str = "*"
     signed_url_ttl_seconds: int = Field(default=3600, ge=60)
 
