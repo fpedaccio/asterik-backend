@@ -64,28 +64,131 @@ def apply_gemini_filter(source_bytes: bytes, prompt: str) -> bytes:
     raise RuntimeError("Gemini did not return an image in the response")
 
 
+_REFERENCE_SYSTEM_INSTRUCTION = (
+    "You are a precision colorist. When given a SOURCE photo and one or more "
+    "STYLE REFERENCE images, your only job is to re-grade the SOURCE so its "
+    "color characteristics match the reference(s), while preserving every "
+    "pixel-level detail of its content. "
+    "ABSOLUTE CONSTRAINTS: the output must show the SAME subjects, faces, "
+    "hair, eyes, expressions, clothing, objects, background elements, "
+    "composition, framing, body posture and scene geometry as the SOURCE. "
+    "Do NOT copy subjects, lighting direction, poses, or scene content from "
+    "the reference(s) — they are for color information ONLY (palette, tone, "
+    "contrast, saturation, white balance, split-tone, grain). The output is "
+    "the SOURCE with a different color grade. Nothing else."
+)
+
+
 def apply_gemini_filter_from_references(
     source_bytes: bytes, references: list[bytes]
 ) -> tuple[bytes, str]:
-    """Engine A, reference-image mode — two-step describe-then-apply.
+    """Engine A, reference-image mode — true multi-image edit.
 
-    The naive approach (source + references in one multimodal request) is
-    unreliable: with multiple input images, the edit model frequently merges
-    content across them or replaces the source entirely. We sidestep that by:
+    The model receives the SOURCE first, labeled, then each STYLE REFERENCE
+    labeled inline (text part before each image — much more reliable than
+    relying on positional indices), then a final task prompt with explicit
+    positive and negative constraints.
 
-      1. Asking a vision model to describe the reference(s) as a STYLE PHRASE.
-      2. Feeding that phrase into the proven single-image edit pipeline that
-         already preserves content correctly.
-
-    Returns the rendered output AND the derived style phrase, so callers can
-    persist it as the human-readable prompt for saved filters.
+    Returns (output_bytes, derived_style_phrase). The derived phrase is what
+    goes into the saved filter's prompt_used so it stays searchable. We ask
+    a separate text model for that phrase to keep the edit call focused.
     """
     if not references:
         raise ValueError("references must contain at least one image")
 
-    description = describe_reference_styles(references) or "style copied from reference image"
-    output = apply_gemini_filter(source_bytes, description)
-    return output, description
+    settings = get_settings()
+    client = genai.Client(api_key=settings.gemini_api_key)
+
+    parts: list[Any] = [
+        types.Part.from_text(
+            text=(
+                "Below is the SOURCE photo. This is the image you must edit. "
+                "Preserve every pixel-level detail of its content."
+            )
+        ),
+        types.Part.from_bytes(data=source_bytes, mime_type=_detect_mime(source_bytes)),
+    ]
+
+    if len(references) == 1:
+        parts.append(
+            types.Part.from_text(
+                text=(
+                    "Below is the STYLE REFERENCE. Analyse its color grade — "
+                    "palette, tone, contrast, saturation, temperature, "
+                    "shadow/highlight tints, film grain — but do NOT copy "
+                    "any of its content into the output."
+                )
+            )
+        )
+        parts.append(
+            types.Part.from_bytes(
+                data=references[0], mime_type=_detect_mime(references[0])
+            )
+        )
+    else:
+        parts.append(
+            types.Part.from_text(
+                text=(
+                    f"The next {len(references)} images are STYLE REFERENCES. "
+                    "Their combined color grade — averaged across them — is "
+                    "the look you should apply. Do NOT copy any of their "
+                    "content into the output."
+                )
+            )
+        )
+        for ref in references:
+            parts.append(
+                types.Part.from_bytes(data=ref, mime_type=_detect_mime(ref))
+            )
+
+    parts.append(
+        types.Part.from_text(
+            text=(
+                "TASK: Output a re-graded version of the SOURCE photo. "
+                "The output's content must be IDENTICAL to the SOURCE — "
+                "same subjects, faces, hair, eyes, mouth, clothing, objects, "
+                "background, composition, framing, body posture and geometry. "
+                "Only the color grade changes: copy palette, tone, contrast, "
+                "saturation, temperature, white balance, shadow tints, "
+                "highlight tints and film grain from the STYLE REFERENCE(s). "
+                "Push the grade hard so it's striking and unmistakable, but "
+                "never alter the SOURCE's pixel-level content. "
+                "Do NOT introduce any subject, object, scene element, lighting "
+                "direction or pose from the reference(s)."
+            )
+        )
+    )
+
+    response = client.models.generate_content(
+        model=settings.gemini_image_model,
+        contents=[types.Content(role="user", parts=parts)],
+        config=types.GenerateContentConfig(
+            system_instruction=_REFERENCE_SYSTEM_INSTRUCTION,
+            response_modalities=["IMAGE"],
+        ),
+    )
+
+    output_bytes: bytes | None = None
+    for candidate in response.candidates or []:
+        for part in candidate.content.parts or []:
+            inline = getattr(part, "inline_data", None)
+            if inline and inline.data:
+                output_bytes = _normalize_jpeg(inline.data)
+                break
+        if output_bytes is not None:
+            break
+
+    if output_bytes is None:
+        raise RuntimeError("Gemini did not return an image in the response")
+
+    # Derive a short style phrase for the stored prompt (so saved filters
+    # remain searchable). Best-effort — we still have the rendered image.
+    try:
+        description = describe_reference_styles(references)
+    except Exception:
+        description = "style copied from reference image"
+
+    return output_bytes, description or "style copied from reference image"
 
 
 def apply_gemini_filter_from_reference(
