@@ -98,3 +98,7 @@ class FilterResponse(BaseModel):
     preview_url: str | None
     visibility: Visibility
     created_at: datetime
+    likes_count: int = 0
+    uses_count: int = 0
+    liked_by_me: bool = False
+    favorited_by_me: bool = False
