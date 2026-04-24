@@ -249,7 +249,9 @@ def favorite_filter(
     f = sb.table("filters").select("id, visibility, owner_id").eq("id", filter_id).maybe_single().execute().data
     if not f:
         raise HTTPException(status_code=404, detail="Filter not found")
-    if f["visibility"] != "public" and f["owner_id"] != user.id:
+    if f["owner_id"] == user.id:
+        raise HTTPException(status_code=400, detail="Cannot favorite your own filter")
+    if f["visibility"] != "public":
         raise HTTPException(status_code=403, detail="Filter is not accessible")
 
     try:
