@@ -64,81 +64,36 @@ def apply_gemini_filter(source_bytes: bytes, prompt: str) -> bytes:
     raise RuntimeError("Gemini did not return an image in the response")
 
 
-_REFERENCE_INSTRUCTION = (
-    "You are an expert colorist. You will receive TWO images: the SOURCE (first) "
-    "and a REFERENCE (second). Your job is to re-grade the source so its color, "
-    "tone, contrast, saturation, temperature, shadow/highlight character, and "
-    "film grain match the look of the reference as closely as possible. "
-    "ABSOLUTE CONSTRAINTS: DO NOT alter the source's subjects, faces, "
-    "composition, objects, or any pixel-level content. DO NOT copy content "
-    "from the reference — only its color grade. Return the source image with "
-    "the reference's color grade applied."
-)
+def apply_gemini_filter_from_references(
+    source_bytes: bytes, references: list[bytes]
+) -> tuple[bytes, str]:
+    """Engine A, reference-image mode — two-step describe-then-apply.
+
+    The naive approach (source + references in one multimodal request) is
+    unreliable: with multiple input images, the edit model frequently merges
+    content across them or replaces the source entirely. We sidestep that by:
+
+      1. Asking a vision model to describe the reference(s) as a STYLE PHRASE.
+      2. Feeding that phrase into the proven single-image edit pipeline that
+         already preserves content correctly.
+
+    Returns the rendered output AND the derived style phrase, so callers can
+    persist it as the human-readable prompt for saved filters.
+    """
+    if not references:
+        raise ValueError("references must contain at least one image")
+
+    description = describe_reference_styles(references) or "style copied from reference image"
+    output = apply_gemini_filter(source_bytes, description)
+    return output, description
 
 
 def apply_gemini_filter_from_reference(
     source_bytes: bytes, reference_bytes: bytes
 ) -> bytes:
-    """Back-compat shim — delegates to the multi-reference implementation."""
-    return apply_gemini_filter_from_references(source_bytes, [reference_bytes])
-
-
-def apply_gemini_filter_from_references(
-    source_bytes: bytes, references: list[bytes]
-) -> bytes:
-    """Engine A, reference-image mode: match the combined grade of N references.
-
-    The model receives: source first, then each reference in order, then a
-    textual instruction describing how to combine them (when N > 1, it's told
-    to blend the looks, weighting each equally).
-    """
-    if not references:
-        raise ValueError("references must contain at least one image")
-
-    settings = get_settings()
-    client = genai.Client(api_key=settings.gemini_api_key)
-
-    parts: list[Any] = [
-        types.Part.from_bytes(data=source_bytes, mime_type=_detect_mime(source_bytes))
-    ]
-    for ref in references:
-        parts.append(
-            types.Part.from_bytes(data=ref, mime_type=_detect_mime(ref))
-        )
-
-    if len(references) == 1:
-        user_text = (
-            "Re-grade the SOURCE image (first) to match the color, tone, "
-            "contrast, saturation, temperature, and grain of the REFERENCE "
-            "image (second). Only color and tone — preserve the source's "
-            "subjects and composition entirely."
-        )
-    else:
-        user_text = (
-            f"Re-grade the SOURCE image (first) to match a BLENDED color grade "
-            f"derived from the {len(references)} REFERENCE images that follow. "
-            "Weight the references equally. Only color and tone — preserve the "
-            "source's subjects and composition entirely."
-        )
-
-    parts.append(types.Part.from_text(text=user_text))
-
-    response = client.models.generate_content(
-        model=settings.gemini_image_model,
-        contents=[types.Content(role="user", parts=parts)],
-        config=types.GenerateContentConfig(
-            system_instruction=_REFERENCE_INSTRUCTION,
-            response_modalities=["IMAGE"],
-        ),
-    )
-
-    for candidate in response.candidates or []:
-        for part in candidate.content.parts or []:
-            inline = getattr(part, "inline_data", None)
-            if inline and inline.data:
-                return _normalize_jpeg(inline.data)
-
-    raise RuntimeError("Gemini did not return an image in the response")
+    """Back-compat shim for single-reference callers."""
+    output, _ = apply_gemini_filter_from_references(source_bytes, [reference_bytes])
+    return output
 
 
 def describe_reference_style(reference_bytes: bytes) -> str:

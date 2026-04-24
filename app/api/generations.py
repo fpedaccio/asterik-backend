@@ -123,15 +123,12 @@ async def create_generation(
 
         if body.engine == "gemini":
             if using_reference:
-                output_bytes = await run_in_threadpool(
+                # Two-step pipeline (describe then apply) — content-preserving
+                # because the edit model only ever sees the source image.
+                output_bytes, derived = await run_in_threadpool(
                     apply_gemini_filter_from_references, source_bytes, reference_bytes_list
                 )
-                # Describe the reference(s) so the saved filter has a real prompt.
-                try:
-                    derived = await run_in_threadpool(describe_reference_styles, reference_bytes_list)
-                    stored_prompt = derived or stored_prompt
-                except Exception:
-                    pass
+                stored_prompt = derived or stored_prompt
             else:
                 output_bytes = await run_in_threadpool(apply_gemini_filter, source_bytes, prompt)
         elif body.engine == "hybrid":
