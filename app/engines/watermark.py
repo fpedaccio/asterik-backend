@@ -35,37 +35,51 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def apply_watermark(img_bytes: bytes) -> bytes:
-    """Overlay a small 'ASTERIK' signature on the bottom-right and re-encode as JPEG."""
+    """Overlay an 'asterik' pill badge on the bottom-right, re-encode as JPEG."""
     base = Image.open(io.BytesIO(img_bytes))
     if base.mode != "RGBA":
         base = base.convert("RGBA")
 
     width, height = base.size
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    # Size relative to the shorter edge so aspect ratio doesn't screw us over.
     short_edge = min(width, height)
-    font_size = max(14, int(short_edge * 0.028))
+
+    # Font: generous size so it reads even on small thumbnails.
+    font_size = max(20, int(short_edge * 0.048))
     font = _load_font(font_size)
 
-    # Measure.
+    # Measure text on a scratch canvas.
+    scratch = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     try:
-        bbox = draw.textbbox((0, 0), _WATERMARK_TEXT, font=font)
+        bbox = scratch.textbbox((0, 0), _WATERMARK_TEXT, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
     except Exception:
-        # load_default fallback: estimate
-        text_w, text_h = (font_size * 5, font_size)
+        text_w, text_h = font_size * len(_WATERMARK_TEXT) // 2, font_size
 
-    pad = max(10, int(short_edge * 0.022))
-    x = width - text_w - pad
-    y = height - text_h - pad - int(font_size * 0.2)
+    h_pad = max(10, int(font_size * 0.55))
+    v_pad = max(6,  int(font_size * 0.35))
+    pill_w = text_w + h_pad * 2
+    pill_h = text_h + v_pad * 2
 
-    # Soft dark shadow for legibility against bright backgrounds.
-    draw.text((x + 1, y + 2), _WATERMARK_TEXT, font=font, fill=(0, 0, 0, 150))
-    # Main glyphs — warm off-white, slightly translucent so it feels printed.
-    draw.text((x, y), _WATERMARK_TEXT, font=font, fill=(248, 244, 233, 210))
+    margin = max(14, int(short_edge * 0.025))
+    pill_x = width  - pill_w - margin
+    pill_y = height - pill_h - margin
+
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Dark semi-transparent pill — guarantees legibility on any bg.
+    radius = pill_h // 2
+    draw.rounded_rectangle(
+        [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+        radius=radius,
+        fill=(0, 0, 0, 165),
+    )
+
+    # White text centred in the pill.
+    tx = pill_x + h_pad - (bbox[0] if 'bbox' in dir() else 0)
+    ty = pill_y + v_pad - (bbox[1] if 'bbox' in dir() else 0)
+    draw.text((tx, ty), _WATERMARK_TEXT, font=font, fill=(255, 255, 255, 255))
 
     composed = Image.alpha_composite(base, overlay).convert("RGB")
     buf = io.BytesIO()
