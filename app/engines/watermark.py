@@ -61,9 +61,19 @@ def apply_watermark(img_bytes: bytes) -> bytes:
     pill_w = text_w + h_pad * 2
     pill_h = text_h + v_pad * 2
 
-    margin = max(14, int(short_edge * 0.025))
-    pill_x = width  - pill_w - margin
-    pill_y = height - pill_h - margin
+    h_margin = max(14, int(short_edge * 0.025))
+
+    # Instagram Stories (and similar tall formats) overlay UI chrome at the
+    # very bottom (~12 % of height). Push the badge up into the safe zone
+    # when the image is portrait-tall so it doesn't get cut off.
+    aspect = height / max(width, 1)
+    if aspect > 1.4:
+        v_margin = max(h_margin, int(height * 0.13))
+    else:
+        v_margin = h_margin
+
+    pill_x = width  - pill_w - h_margin
+    pill_y = height - pill_h - v_margin
 
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
