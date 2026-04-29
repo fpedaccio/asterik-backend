@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.quota import (
+    FREE_CUSTOM_LIMIT,
     FREE_GEMINI_LIMIT,
     FREE_HYBRID_LIMIT,
     PRO_TOTAL_LIMIT,
@@ -23,16 +24,14 @@ class QuotaResponse(BaseModel):
     hybrid_limit: int
     total_used: int
     total_limit: int
+    custom_used: int
+    custom_limit: int
     can_use_custom_prompt: bool
 
 
 @router.get("", response_model=QuotaResponse)
 def get_quota(user: CurrentUser = Depends(get_current_user)) -> QuotaResponse:
     plan = get_user_plan(user.id)
-
-    gemini_used = _count_this_month(user.id, engine="gemini")
-    hybrid_used = _count_this_month(user.id, engine="hybrid")
-    total_used = gemini_used + hybrid_used
 
     if plan == "pro":
         total_used = _count_this_month(user.id)
@@ -44,8 +43,14 @@ def get_quota(user: CurrentUser = Depends(get_current_user)) -> QuotaResponse:
             hybrid_limit=PRO_TOTAL_LIMIT,
             total_used=total_used,
             total_limit=PRO_TOTAL_LIMIT,
+            custom_used=total_used,
+            custom_limit=PRO_TOTAL_LIMIT,
             can_use_custom_prompt=True,
         )
+
+    gemini_used = _count_this_month(user.id, engine="gemini")
+    hybrid_used = _count_this_month(user.id, engine="hybrid")
+    custom_used = _count_this_month(user.id, custom_only=True)
 
     return QuotaResponse(
         plan="free",
@@ -53,7 +58,9 @@ def get_quota(user: CurrentUser = Depends(get_current_user)) -> QuotaResponse:
         gemini_limit=FREE_GEMINI_LIMIT,
         hybrid_used=hybrid_used,
         hybrid_limit=FREE_HYBRID_LIMIT,
-        total_used=total_used,
+        total_used=gemini_used + hybrid_used,
         total_limit=FREE_GEMINI_LIMIT + FREE_HYBRID_LIMIT,
-        can_use_custom_prompt=False,
+        custom_used=custom_used,
+        custom_limit=FREE_CUSTOM_LIMIT,
+        can_use_custom_prompt=custom_used < FREE_CUSTOM_LIMIT,
     )
